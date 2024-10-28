@@ -1,0 +1,184 @@
+---
+title: "EDS 223 - Week 5"
+author: "Caroline Edmonds"
+format: html
+editor: visual
+---
+
+#Libraries
+
+```{r}
+library(sf) # vector handling
+library(terra) # raster handling
+library(tidyverse)
+library(tmap) # map making
+library(spData) # spatial data
+library(spDataLarge) # spatial data
+library(viridisLite)
+```
+
+#Data
+
+```{r}
+# load raster dataset
+elevation <- rast(system.file("raster/srtm.tif", package = "spDataLarge"))
+
+# load vector dataset
+boundary <- read_sf(system.file("vector/zion.gpkg", package = "spDataLarge"))
+```
+
+#Check CRS
+
+```{r}
+# check if coordinate reference systems match
+if(crs(elevation) == crs(boundary)) {
+  print("Coordinate reference systems match")
+} else{
+  warning("Updating coordinate reference systems to match")
+  # transform data to match
+  boundary <- st_transform(boundary, st_crs(elevation))
+}
+```
+
+
+```{r}
+tm_shape(elevation) +
+  tm_raster(title = "Elevation (meters)") +
+tm_shape(boundary) +
+  tm_borders(lwd = 2) + #width of the line of the border
+tm_layout(legend.outside = TRUE)
+```
+
+#Raster Cropping 
+Many geographic data projects involve integrating data from many different sources, such as remote sensing images (rasters) and administrative boundaries (vectors). Often the extent of input raster datasets is larger than the area of interest. In this case, raster cropping and masking are useful for unifying the spatial extent of input data. Both operations reduce object memory use and associated computational resources for subsequent analysis steps and may be a necessary preprocessing step when creating attractive maps involving raster data.
+
+First, let’s crop the extent of the elevation raster to match the extent of Zion’s boundaries. Through this process, we eliminate grid cells that fall outside the extent of the park and reduce the size of the raster. To do so, we use the terra::crop() function.
+
+First, let’s crop the extent of the elevation raster to match the extent of Zion’s boundaries. Through this process, we eliminate grid cells that fall outside the extent of the park and reduce the size of the raster. To do so, we use the terra::crop() function.
+
+```{r}
+# crop raster to extent of vector object
+elevation_cropped <- terra::crop(elevation, boundary)
+
+#choose package for base data you are working in, i.e. this case we want to keep working with raster
+
+tm_shape(elevation_cropped) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+  
+```
+
+Beyond matching the extent, we can also set the values of raster cells outside of the boundaries or the park to NA using terra::mask().
+
+```{r}
+# mask raster based on vector object
+# (cells outside of vector are converted to NA)
+elevation_masked <- terra::mask(elevation, boundary)
+
+#may want to pass in cropped version of elevation
+elevation_masked <- terra::mask(elevation_cropped, boundary)
+#check by looking number of grid cells
+
+tm_shape(elevation_masked) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+```
+
+Often, we will want to combine both cropping and masking to reduce the size of the raster as much as possible.
+```{r}
+# crop and mask raster
+elevation_final <- mask(elevation_cropped, boundary)
+
+#in code chunk above (second line)
+```
+
+In some cases, we may want to mask the raster cells inside of the boundaries (i.e. assign cells inside the park to NA). We can do so with terra::mask() by setting the argument inverse = TRUE.
+```{r}
+# mask raster based on vector object
+# (cells inside of vector are converted to NA)
+elevation_inv_masked <- mask(elevation_cropped, boundary, inverse = TRUE)
+
+tm_shape(elevation_inv_masked) +
+  tm_raster(title = "Elevation (meters)") +
+  tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+  tm_layout(legend.outside = TRUE)
+
+```
+Compare all the steps visually.
+```{r}
+map1 <- tm_shape(elevation) +
+  tm_raster(legend.show = FALSE) +
+tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+tm_layout(main.title = "original")
+
+map2 <- tm_shape(elevation_cropped) +
+  tm_raster(legend.show = FALSE) +
+tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+tm_layout(main.title = "cropped")
+
+map3 <- tm_shape(elevation_masked) +
+  tm_raster(legend.show = FALSE) +
+tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+tm_layout(main.title = "masked")
+
+map4 <- tm_shape(elevation_final) +
+  tm_raster(legend.show = FALSE) +
+tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+tm_layout(main.title = "cropped & masked")
+
+map5 <- tm_shape(elevation_inv_masked) +
+  tm_raster(legend.show = FALSE) +
+tm_shape(boundary) +
+  tm_borders(lwd = 2) +
+tm_layout(main.title = "inverse mask")
+
+tmap_arrange(map1, map2, map3, map4, map5, nrow = 2)
+```
+
+#Raster Vectorization
+There are several ways to convert raster data into vector. The most common, and straightforward, is converting raster grid cells into polygons. For more examples, check out Geocomputation with R.
+
+We could simply convert all grid cells into polygons, but it may be more helpful to create polygons based on some condition.
+
+In this example, we’ll select grid cells higher than 2000 meters by masking the elevation raster. We’ll then convert these grid cells into polygons using the terra::as.polygons() function and turn this into a sf object.
+
+```{r}
+elevation_mask <- elevation_final
+elevation_mask[elevation_mask < 2000] <- NA
+
+
+
+elevation_mask_poly <- as.polygons(elevation_mask) %>% 
+  st_as_sf()
+```
+
+
+Plot!
+```{r}
+map1 <- tm_shape(elevation_mask) +
+  tm_raster() +
+  tm_layout(legend.outside = TRUE,
+            main.title = "masked raster")
+
+map2 <- tm_shape(elevation_mask_poly) +
+  tm_polygons() +
+  tm_layout(main.title = "vectorized raster")
+
+tmap_arrange(map1, map2, nrow = 1)
+```
+
+
+
+
+
+
+
